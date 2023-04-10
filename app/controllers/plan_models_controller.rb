@@ -21,14 +21,50 @@ class PlanModelsController < ApplicationController
   
   def new
     @plan_model = PlanModel.new
+    @plan_model.event_steps.build
   end
   
   def fix_params
+
     if params[:plan_model].blank?
         # parent not provided
         return
     end
     new_paras = plan_model_data
+    #create default data structure
+    extra1_dict = {
+      "day1_date" => "2023-03-01","day1_hour1" => '5',"day1_hour2" => '10',"day1_hour3" => '6',
+      "day1_hour4" => '7',"day1_hour5" => '8',"day1_hour6" => '9',
+      "day2_date" => "","day2_hour1" => '',"day2_hour2" => '',"day2_hour3" => '',
+      "day2_hour4" => '', "day2_hour5" => '',"day2_hour6" => '',
+      "day3_date" => "","day3_hour1" => '',"day3_hour2" => '',"day3_hour3" => '',
+      "day3_hour4" => '',"day3_hour5" => '',"day3_hour6" => '',
+      "day4_date" => "","day4_hour1" => '',"day4_hour2" => '',
+      "day4_hour3" => '',"day4_hour4" => '',"day4_hour5" => '',"day4_hour6" => '',
+      "scale" => 'Feet',
+      "length" => '50',
+      "width" => '50'}
+    #parse actual data from user data and format properly
+    puts params[:plan_model][:scale]
+    puts params[:plan_model][:length]
+    puts params[:plan_model][:width]
+    extra1_dict["scale"]= params[:plan_model][:scale]
+    extra1_dict["length"]= params[:plan_model][:length]
+    extra1_dict["width"]= params[:plan_model][:width]
+    eventsteptotal = params[:plan_model][:event_steps_attributes]
+    i=1
+    #iterate through all the event days
+    eventsteptotal.each do |key,unit_event|
+      extra1_dict["day"+ i.to_s+"_date"] = unit_event[:StartDay]
+      extra1_dict["day"+ i.to_s+"_hour1"] = unit_event[:StartTime]
+      extra1_dict["day"+ 1.to_s+"_hour2"] = unit_event[:EndTime]
+      extra1_dict["day"+ 1.to_s+"_hour3"] = unit_event[:Break1start]
+      extra1_dict["day"+ 1.to_s+"_hour4"] = unit_event[:Break1end]
+      extra1_dict["day"+ 1.to_s+"_hour5"] = unit_event[:Break2start]
+      extra1_dict["day"+ 1.to_s+"_hour6"] = unit_event[:Break2end]
+      i+=1
+    end
+    '''
     if params[:plan_model].key?("day1_date")
       extra1_dict = {"day1_date" => params[:plan_model].delete(:day1_date),
                                       "day1_hour1" => params[:plan_model].delete(:day1_hour1),
@@ -64,14 +100,18 @@ class PlanModelsController < ApplicationController
                                       
       }
     end
+    '''
     new_paras[:extra1] = extra1_dict.to_json
     logger.info "After fix:"
     logger.info new_paras
+    puts new_paras
     return new_paras
   end
 
   def create
+    #@plan_model = PlanModel.new(plan_model_data)
     @plan_model = PlanModel.new(fix_params)
+
     if @plan_model.save
       redirect_to edit_plan_model_path(@plan_model)
       #redirect_to edit_page_path
@@ -93,22 +133,11 @@ class PlanModelsController < ApplicationController
   
   def edit_admin
     @plan_model = PlanModel.find(params[:id])
-    #render inline: File.read('frontend/Untitled-1.html')
-    #render file: 'frontend/Untitled-1.html', layout: false
   end
   
   def edit
     @plan_model = PlanModel.find(params[:id])
-    render file: 'frontend/drawPanel.html', layout: false
-    #render inline: File.read('frontend/Untitled-1.html')
-    #redirect_to edit_plan_model_path(@plan_model)
-    #
-    # if @plan_model.update(fix_params)
-    #   #render file: 'frontend/drawPanel.html', layout: false
-    #   #redirect_to edit_page_path
-    # else
-    #   #render :new, status: :unprocessable_entity
-    # end
+    render :drawPanel
   end
   
   def draw_panel
@@ -132,9 +161,6 @@ class PlanModelsController < ApplicationController
   end
   
   def update_json
-    # user = get_user() param debug = True, user = 1
-    # user = 1
-    # user = 4
     @plan_model = PlanModel.find(params[:id])
     logger.info params[:plan_model]
     #@plan_model.attributes = params[:plan_model]
@@ -153,21 +179,39 @@ class PlanModelsController < ApplicationController
     redirect_to edit_page_path, status: :see_other
   end
   
-  def destroy_json
+  # def destroy_json
+  #   @plan_model = PlanModel.find(params[:id])
+  #   if @plan_model.destroy
+  #     render json: {error_code:0}
+  #   else
+  #     render json: {error_code:1}
+  #   end
+  # end
+
+  def duplicate
+    @plan_model = PlanModel.find(params[:id]).dup
+    @plan_model.save
+    flash[:notice] = "Plan '#{@plan_model.name}' copied."
+    redirect_to edit_page_path
+  end
+
+  def export
     @plan_model = PlanModel.find(params[:id])
-    if @plan_model.destroy
-      render json: {error_code:0}
-    else
-      render json: {error_code:1}
-    end
+    send_data @plan_model.to_json, :filename => "plannxt-#{@plan_model.name}.json"
+  end
+
+  def import
+    @plan_model = PlanModel.new(JSON.parse(params[:upload].read))
+    @plan_model.save
+    redirect_to edit_plan_model_path(@plan_model)
   end
   
   private
     def plan_model_data
       if Current.user
-        params.require(:plan_model).permit(:name, :data, :editPermission, :viewPermission, :extra1, :extra2, :extra3).merge(creator: Current.user.id)
+        params.require(:plan_model).permit(:name, :data, :editPermission, :viewPermission, :extra1, :extra2, :extra3, event_steps_attributes:[:id, :Num,:StartDay, :StartTime, :EndTime, :Break1start, :Break1end,:Break2start,:Break2end,:_destroy]).merge(creator: Current.user.id)
       else
-        params.require(:plan_model).permit(:name, :data, :editPermission, :viewPermission, :extra1, :extra2, :extra3)
+        params.require(:plan_model).permit(:name, :data, :editPermission, :viewPermission, :extra1, :extra2, :extra3, event_steps_attributes:[:id, :Num, :StartDay, :StartTime, :EndTime, :Break1end,:Break2start,:Break2end,:_destroy])
       end
     end
 end
